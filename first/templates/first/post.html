@@ -1,0 +1,22 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="{% static 'css/post.css' %}">
+    <meta charset="UTF-8">
+    <title>에플의 첫번째 장고 짜잔</title>
+</head>
+<body>
+    <div><h1>데이터 가져오기 짜잔~.~</h1></div>
+    {% for post in posts %}
+        <div style="padding-left:15px;text-align:left;">
+            <p>name : {{post.name}}</p>
+            <p>title : {{post.title}}</p>
+            <p>{{post.content}}</p>
+            <p>created : {{post.created}}</p>
+        </div>
+        <hr style="width:700px;thin solid">
+    {% endfor %}
+</body>
+</html>
+

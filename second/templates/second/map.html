@@ -1,0 +1,283 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>에플의 두번째 과제 야호</title>
+    <style>
+        .placeinfo_wrap {position:absolute;bottom:28px;left:-150px;width:300px;}
+        .placeinfo {position:relative;width:100%;border-radius:6px;border: 1px solid #ccc;border-bottom:2px solid #ddd;padding-bottom:10px;background: #fff;}
+        .placeinfo:nth-of-type(n) {border:0; box-shadow:0px 1px 2px #888;}
+        .placeinfo_wrap .after {content:'';position:relative;margin-left:-12px;left:50%;width:22px;height:12px;background:url('http://t1.daumcdn.net/localimg/localimages/07/mapapidoc/vertex_white.png')}
+        .placeinfo a, .placeinfo a:hover, .placeinfo a:active{color:#fff;text-decoration: none;}
+        .placeinfo a, .placeinfo span {display: block;text-overflow: ellipsis;overflow: hidden;white-space: nowrap;}
+        .placeinfo span {margin:5px 5px 0 5px;cursor: default;font-size:13px;}
+        .placeinfo .title_FD6 {font-weight: bold; font-size:14px;border-radius: 6px 6px 0 0;margin: -1px -1px 0 -1px;padding:10px; color: #fff;background: #9fc93c;background: #9fc93c url(http://t1.daumcdn.net/localimg/localimages/07/mapapidoc/arrow_white.png) no-repeat right 14px center;}
+        .placeinfo .title_CE7 {font-weight: bold; font-size:14px;border-radius: 6px 6px 0 0;margin: -1px -1px 0 -1px;padding:10px; color: #fff;background: #997000;background: #997000 url(http://t1.daumcdn.net/localimg/localimages/07/mapapidoc/arrow_white.png) no-repeat right 14px center;}
+        .placeinfo .tel {color:#0f7833;}
+        .placeinfo .jibun {color:#999;font-size:11px;margin-top:0;}
+        .save_place {float:left;margin:10px;}
+        .save_place span {font-weight:bold;padding-bottom:10px;margin:5px 5px 0 5px;cursor: default;font-size:13px;}
+        .title {font-weight: bold; font-size:30px;border-radius: 6px 6px 0 0; center;}
+    </style>
+</head>
+<body>
+<h1 class="title" align="center">☆판천지☆</h1>
+<div>
+    <div id="show_list" style="float:right;"><button onclick="showList()">저장된 맛집 가져오기</button></div>
+    <div id="map" style="width:750px;height:500px;float:left;overflow:hidden;"></div>
+    <div id="form_view">
+        <form method="POST" action="">
+            {% csrf_token %}
+            <div class="save_place" style="float:left;margin:10px;">
+                <span>등록자: </span><input type="text" id="register" name="register" ><br>
+                <span>식당명: </span><input type="text" id="place_name" name="place_name" size="50" readonly><br>
+                <span>위도: </span><input type="text" id="lat" name="lat" readonly><br>
+                <span>경도: </span><input type="text" id="lng" name="lng" readonly><br>
+                <span>도로명주소: </span><input type="text" id="road_address" name="road_address" size="50" readonly><br>
+                <span>지번: </span><input type="text" id="jibun_address" name="jibun_address" size="50" readonly><br>
+                <span>전화번호: </span><input type="text" id="phone" name="phone" size="10" readonly><br>
+                <span>카테고리: </span><input type="text" id="category" name="category" readonly size="3"><br>
+                <span>등록일: </span><input type="text" id="created_at" name="created_at" readonly size="5"><br>
+                <br>
+                <button type="submit" id="savebutton" onclick="savePlace()">요기저장하기</button>
+            </div>
+
+            <div id="saved_list" style="float:right;"></div>
+        </form>
+    </div>
+</div>
+
+<script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=4047994dae5f156e4a47f71f7d406a4f&libraries=services"></script>
+<script>
+var mapContainer = document.getElementById('map'), // 지도를 표시할 div
+    mapOption = {
+        center: new kakao.maps.LatLng(37.401182, 127.108673), // 지도의 중심좌표
+        level: 3 // 지도의 확대 레벨
+    };
+
+// 지도
+var map = new kakao.maps.Map(mapContainer, mapOption);
+// 장소 검색 객체
+var ps = new kakao.maps.services.Places(map);
+// 주소-좌표 변환객체
+var geocoder = new kakao.maps.services.Geocoder();
+var placesArr = [];
+var clickedPlace;
+var mode = "map";
+
+// 주소 검색
+geocoder.addressSearch('경기도 성남시 판교역로 231', function(result, status) {
+    if(status == kakao.maps.services.Status.OK) {
+        var coords = new kakao.maps.LatLng(result[0].y, result[0].x);
+
+        // 지도의 중심을 결과값으로 받은 위치로 이동시킵니다
+        map.setCenter(coords);
+    }
+});
+
+// 지도에 idle 이벤트를 등록합니다
+kakao.maps.event.addListener(map, 'idle', searchPlaces);
+
+// 마커를 클릭했을 때 해당 장소의 상세정보를 보여줄 커스텀오버레이
+var placeOverlay = new kakao.maps.CustomOverlay({zIndex:1}),
+             contentNode = document.createElement('div'),
+             markers= [];        //마커를 담을 배열
+
+
+// 커스텀 오버레이의 컨텐츠 노드에 css class를 추가합니다
+contentNode.className = 'placeinfo_wrap';
+
+// 커스텀 오버레이의 컨텐츠 노드에 mousedown, touchstart 이벤트가 발생했을때
+// 지도 객체에 이벤트가 전달되지 않도록 이벤트 핸들러로 kakao.maps.event.preventMap 메소드를 등록합니다
+addEventHandle(contentNode, 'mousedown', kakao.maps.event.preventMap);
+addEventHandle(contentNode, 'touchstart', kakao.maps.event.preventMap);
+
+// 커스텀 오버레이 컨텐츠를 설정합니다
+placeOverlay.setContent(contentNode);
+
+// 엘리먼트에 이벤트 핸들러를 등록하는 함수입니다
+function addEventHandle(target, type, callback) {
+    if (target.addEventListener) {
+        target.addEventListener(type, callback);
+    } else {
+        target.attachEvent('on' + type, callback);
+    }
+}
+
+// 카테고리 검색을 요청하는 함수입니다
+function searchPlaces() {
+    // 지도에 표시되고 있는 마커를 제거합니다
+    removeMarker();
+
+    // 카테고리로 식당 검색 (FD6: 식당 / CE7: 카페 / CS2: 편의점 , MT1: 마트)
+    ps.categorySearch('FD6', placesSearchCB, {useMapBounds:true});
+    ps.categorySearch('CE7', placesSearchCB, {useMapBounds:true});
+}
+
+// 키워드 검색 완료 시 호출되는 콜백함수 입니다
+function placesSearchCB (data, status, pagination) {
+    if (status === kakao.maps.services.Status.OK) {
+        // 정상적으로 검색이 완료됐으면 지도에 마커를 표출
+        displayPlaces(data);
+    } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
+        // 검색결과가 없는경우 해야할 처리가 있다면 이곳에 작성해 주세요
+
+    } else if (status === kakao.maps.services.Status.ERROR) {
+        // 에러로 인해 검색결과가 나오지 않은 경우 해야할 처리가 있다면 이곳에 작성해 주세요
+
+    }
+}
+
+// 지도에 마커를 표출하는 함수입니다
+function displayPlaces(places) {
+
+    // 몇번째 카테고리가 선택되어 있는지 얻어옵니다
+    // 이 순서는 스프라이트 이미지에서의 위치를 계산하는데 사용됩니다
+    for ( var i=0; i<places.length; i++ ) {
+
+            // 마커를 생성하고 지도에 표시합니다
+            var marker = addMarker(new kakao.maps.LatLng(places[i].y, places[i].x));
+
+            // 마커와 검색결과 항목을 클릭 했을 때
+            // 장소정보를 표출하도록 클릭 이벤트를 등록합니다
+            (function(marker, place) {
+                kakao.maps.event.addListener(marker, 'click', function() {
+                    displayPlaceInfo(place);
+                    clickedPlace = place;
+                });
+            })(marker, places[i]);
+    }
+}
+
+function displaySavedPlaces(places) {
+    // 몇번째 카테고리가 선택되어 있는지 얻어옵니다
+    // 이 순서는 스프라이트 이미지에서의 위치를 계산하는데 사용됩니다
+    for ( var i=0; i<places.length; i++ ) {
+
+        // 마커를 생성하고 지도에 표시합니다
+        var marker = addImageMarker(new kakao.maps.LatLng(places[i].y, places[i].x));
+
+        // 마커와 검색결과 항목을 클릭 했을 때
+        // 장소정보를 표출하도록 클릭 이벤트를 등록합니다
+        (function(marker, place) {
+            kakao.maps.event.addListener(marker, 'click', function() {
+                displayPlaceInfo(place);
+                clickedPlace = place;
+            });
+        })(marker, places[i]);
+    }
+}
+
+// 마커를 생성하고 지도 위에 마커를 표시하는 함수입니다
+function addMarker(position) {
+    var marker = new kakao.maps.Marker({
+            position: position
+        });
+
+    marker.setMap(map);     // 지도 위에 마커를 표출합니다
+    markers.push(marker);   // 배열에 생성된 마커를 추가합니다
+
+    return marker;
+}
+
+function addImageMarker(position) {
+    var imageSrc = "http://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png";
+    // 마커 이미지의 이미지 크기 입니다
+    var imageSize = new kakao.maps.Size(24, 35);
+    // 마커 이미지를 생성합니다
+    var markerImage = new kakao.maps.MarkerImage(imageSrc, imageSize);
+    var marker = new kakao.maps.Marker({
+        position: position,
+        image: markerImage
+    });
+
+    marker.setMap(map);     // 지도 위에 마커를 표출합니다
+    markers.push(marker);   // 배열에 생성된 마커를 추가합니다
+
+    return marker;
+}
+// 지도 위에 표시되고 있는 마커를 모두 제거합니다
+function removeMarker() {
+    for ( var i = 0; i < markers.length; i++ ) {
+        markers[i].setMap(null);
+    }
+    markers = [];
+}
+
+// 클릭한 마커에 대한 장소 상세정보를 커스텀 오버레이로 표시하는 함수입니다
+function displayPlaceInfo (place) {
+    var content = '<div class="placeinfo">' +
+                    '   <a class="title_' + place.category_group_code + '" href="' + place.place_url + '" target="_blank" title="' + place.place_name + '">' + place.place_name + '</a>';
+
+    if (place.road_address_name) {
+        content += '    <span title="' + place.road_address_name + '">' + place.road_address_name + '</span>' +
+                    '  <span class="jibun" title="' + place.address_name + '">(지번 : ' + place.address_name + ')</span>';
+    }  else {
+        content += '    <span title="' + place.address_name + '">' + place.address_name + '</span>';
+    }
+
+    content += '    <span class="tel">' + place.phone + '</span>' +
+                '</div>' +
+                '<div class="after"></div>';
+
+    contentNode.innerHTML = content;
+    placeOverlay.setPosition(new kakao.maps.LatLng(place.y, place.x));
+    placeOverlay.setMap(map);
+
+    displaySavePlace(place);
+}
+
+// 오른쪽 div에 저장할 place 표시하기
+function displaySavePlace (place) {
+    document.getElementById('place_name').value = place.place_name;
+    document.getElementById('lat').value = place.x;
+    document.getElementById('lng').value = place.y;
+    document.getElementById('road_address').value = place.road_address_name;
+    document.getElementById('jibun_address').value = place.address_name;
+    document.getElementById('phone').value = place.phone;
+    document.getElementById('category').value = place.category_group_code;
+
+    if(mode == "view")
+    {
+        document.getElementById('register').value = place.register;
+        document.getElementById('created_at').value = place.created_at;
+        document.getElementById("created_at").style.display = "block";
+    }
+}
+
+// 맛집 저장하기
+function savePlace() {
+    if(clickedPlace == null)
+    {
+        alert("식당을 선택해");
+        return;
+    }
+
+    if(document.getElementById('register').value() == '')
+    {
+        alert("등록자 이름 써");
+        document.getElementById('register').focus();
+        return;
+    }
+
+}
+
+//저장된 맛집리스트를 출력
+function showList() {
+    mode = "view";
+    document.getElementById("savebutton").style.display = "none";
+    //document.getElementById("saved_list").style.display = "block";
+
+    {% for place in places %}
+        placesArr.push({ place_name: "{{ place.place_name }}", x: {{ place.lat }} , y: {{ place.lng }}
+                        , road_address_name: "{{ place.road_address }}", address_name: "{{ place.jibun_address }}", phone: "{{ place.phone }}"
+                        , category_group_code: "{{ place.category }}" , register: "{{ place.register }}", created_at: "{{ place.created_at }}" });
+    {% endfor %}
+
+    removeMarker();
+    displaySavedPlaces(placesArr);
+}
+</script>
+</body>
+</html>
